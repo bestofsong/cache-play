@@ -1,0 +1,3 @@
+[submodule "submodules/ios-common"]
+	path = submodules/ios-common
+	url = git@code.smartstudy.com:wansong/ios-common.git
