@@ -30,7 +30,8 @@
                                                                            target:self
                                                                            action:@selector(previewVideo:)];
   
-  NSArray<NSString*> *urls = @[@"https://raw.githubusercontent.com/bestofsong/bestofsong.github.io/master/assets/dest.m3u8"];
+  NSArray<NSString*> *urls = @[@"https://raw.githubusercontent.com/bestofsong/bestofsong.github.io/master/assets/dest.m3u8",
+                               @"https://raw.githubusercontent.com/bestofsong/bestofsong.github.io/master/assets/mp4/dest.mp4"];
   NSMutableArray<NSMutableDictionary*> *dataSource = [NSMutableArray array];
   [urls enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
     [dataSource addObject:[@{
