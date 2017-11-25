@@ -17,5 +17,6 @@ typedef void(^ErrorBlock)(NSError *);
 + (void)startReverseHost:(NSString *)host listener:(CallbackBlock) listener;
 + (BOOL)clearM3u8Cache:(NSError **)error;
 + (unsigned long long)cacheSize;
++ (void)setAcceptableMimeContentTypes: (NSSet *)types;
 
 @end

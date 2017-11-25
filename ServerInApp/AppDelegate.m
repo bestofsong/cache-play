@@ -10,7 +10,7 @@
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
-  [ZKVideoCacheManager startReverseHost:@"https://raw.githubusercontent.com"
+  [ZKVideoCacheManager startReverseHost:@"http://media6.smartstudy.com"
                                listener:^(NSDictionary *info) {
                                  dispatch_async(dispatch_get_main_queue(), ^{
                                    [self showServerEvent:info];
