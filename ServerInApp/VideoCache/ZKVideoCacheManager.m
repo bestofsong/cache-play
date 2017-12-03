@@ -11,14 +11,18 @@
 #import "GCDWebServer.h"
 #import "GCDWebServerFileResponse.h"
 #import "GCDWebServerDataResponse.h"
+#import "ZKGCDWebServerStreamedResponse.h"
+#import "ZKSimpleFIFO.h"
 
 
-@interface ZKVideoCacheManager ()
+@interface ZKVideoCacheManager () <NSURLSessionDataDelegate>
 
 @property (strong, nonatomic) NSString *cacheRoot;
 @property (strong, nonatomic) GCDWebServer *webServer;
 @property (strong, nonatomic) NSURLSession *urlSession;
 @property (copy, nonatomic) NSString *reverseHost;
+@property (strong, nonatomic) NSMutableDictionary<NSString *, NSMutableDictionary *> *proxyReqRecords;
+@property (strong, nonatomic) dispatch_queue_t queue;
 @end
 
 @implementation ZKVideoCacheManager
@@ -28,6 +32,8 @@
   static ZKVideoCacheManager *ret = nil;
   dispatch_once(&onceToken, ^{
     ret = [[ZKVideoCacheManager alloc] init];
+    ret.proxyReqRecords = [NSMutableDictionary dictionary];
+    ret.queue = dispatch_queue_create("ZKVideoCacheManager", DISPATCH_QUEUE_SERIAL);
   });
   return ret;
 }
@@ -36,6 +42,18 @@
   ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
   theInstance.reverseHost = host;
   theInstance.webServer = [[GCDWebServer alloc] init];
+  CallbackBlock mainQueueListener = ^(NSDictionary *info) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      listener(info);
+    });
+  };
+  dispatch_async(theInstance.queue, ^{
+    [ZKVideoCacheManager startReverseHostImp:host listener:mainQueueListener];
+  });
+}
+
++ (void)startReverseHostImp:(NSString *)host listener: (CallbackBlock) listener {
+  ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
   ZKVideoCacheManager * __weak weakIns = theInstance;
   
   [theInstance.webServer
@@ -93,51 +111,65 @@
   }
    asyncProcessBlock:
    ^(__kindof GCDWebServerRequest *request, GCDWebServerCompletionBlock completionBlock) {
-     NSURL *mediaUrl = [NSURL URLWithString:[self remoteHostUrl]];
-     NSURL *fullUrl = [mediaUrl URLByAppendingPathComponent:request.path];
-//     serializer.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
-     NSDictionary<NSString *, id> *headers = [request headers];
-     NSMutableURLRequest *mutableReq = [NSMutableURLRequest requestWithURL:fullUrl];
-     
-     [headers enumerateKeysAndObjectsUsingBlock:
-      ^(NSString * _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-       if (![key isEqualToString:@"Host"]) {
-         [mutableReq setValue:obj forHTTPHeaderField:key];
-       }
-     }];
-     NSMutableDictionary *requestHeaders = [NSMutableDictionary dictionary];
-     [[mutableReq allHTTPHeaderFields] enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key, NSString * _Nonnull obj, BOOL * _Nonnull stop) {
-       requestHeaders[key] = [mutableReq valueForHTTPHeaderField:key];
-     }];
-
-     
-     [weakIns request:mutableReq
-           onComplete:^(NSDictionary *res) {
-             NSURLResponse *response = res[@"response"];
-             id responseObject = res[@"responseObject"];
-             
-             [ZKVideoCacheManager handleOrigRequest:request
-                                     remoteResponse:response
-                                 remoteResponseData:responseObject
-                                           callback:^(GCDWebServerResponse *resp) {
-                                             NSLog(@"DEBUG: origRequest(%@), proxyRequest(%@), remoteResp(%@), resp(%@)",
-                                                   request,
-                                                   mutableReq,
-                                                   response,
-                                                   resp);
-                                             completionBlock(resp);
-                                           }];
-           }
-              onError:^(NSError * err) {
-                NSLog(@"request(%@) failed(%@)", mutableReq, err.localizedDescription);
-                completionBlock(nil);
-              }];
+     [weakIns handleClientRequest:request
+                       onResponse:completionBlock];
    }];
   
-  [theInstance.webServer startWithOptions:@{
-                                            GCDWebServerOption_Port:@(4567),
-                                            GCDWebServerOption_BindToLocalhost:@YES,
-                                            } error:NULL];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [theInstance.webServer startWithOptions:@{
+                                              GCDWebServerOption_Port:@(4567),
+                                              GCDWebServerOption_BindToLocalhost:@YES,
+                                              } error:NULL];
+  });
+}
+
+- (void)handleClientRequest:(GCDWebServerRequest *)clientRequest
+                 onResponse: (GCDWebServerCompletionBlock) completionBlock {
+  
+  NSURL *mediaUrl = [NSURL URLWithString:[self.class remoteHostUrl]];
+  NSURL *fullUrl = [mediaUrl URLByAppendingPathComponent:clientRequest.path];
+  NSDictionary<NSString *, id> *headers = [clientRequest headers];
+  NSMutableURLRequest *mutableReq = [NSMutableURLRequest requestWithURL:fullUrl];
+  
+  [headers enumerateKeysAndObjectsUsingBlock:
+   ^(NSString * _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+     if (![key isEqualToString:@"Host"]) {
+       [mutableReq setValue:obj forHTTPHeaderField:key];
+     }
+   }];
+  NSMutableDictionary *requestHeaders = [NSMutableDictionary dictionary];
+  [[mutableReq allHTTPHeaderFields] enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key, NSString * _Nonnull obj, BOOL * _Nonnull stop) {
+    requestHeaders[key] = [mutableReq valueForHTTPHeaderField:key];
+  }];
+  
+  NSURLSession *session = self.urlSession;
+  
+  NSURLSessionDataTask *task = nil;
+  task = [session dataTaskWithRequest:mutableReq];
+  
+  NSString *recKey = [self getProxyRecordForTask:task];
+  NSMutableDictionary *rec = [NSMutableDictionary
+                              dictionaryWithObjectsAndKeys:completionBlock,
+                              @"responseCallback",
+                              clientRequest, @"request", nil];
+  [self addProxyRecord:rec forKey:recKey];
+  [task resume];
+}
+
+- (void) addProxyRecord:(NSMutableDictionary *)rec forKey:(NSString *) recKey {
+  NSMutableDictionary *proxyRecs = self.proxyReqRecords;
+  proxyRecs[recKey] = rec;
+}
+
+- (NSString *)getProxyRecordForTask:(NSURLSessionTask *)task {
+  return [NSString stringWithFormat:@"%lu", task.taskIdentifier];
+}
+
+- (void) clearProxyRecord:(NSString *) key {
+  NSMutableDictionary *proxyRecs = self.proxyReqRecords;
+  if (key && proxyRecs[key]) {
+    [proxyRecs removeObjectForKey:key];
+  }
 }
 
 - (void)getDataUrl:(NSString*)url
@@ -347,14 +379,6 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
             remoteResponse:(NSURLResponse *)response
         remoteResponseData:(id)responseObject
                   callback:(GCDWebServerCompletionBlock) callback {
-  NSDictionary<NSString *, id> *origHeaders = [request headers];
-  NSString *rangeHeaderVale = origHeaders[@"Range"];
-  NSArray<NSNumber*> *origRange = [ZKVideoCacheManager parseRange:rangeHeaderVale];
-  NSArray<NSNumber*> *fixedRange = [ZKVideoCacheManager restrictedRange:origRange];
-  int64_t from = [origRange.firstObject longLongValue];
-  int64_t to = [origRange.lastObject longLongValue];
-  int64_t refrainedTo = [fixedRange.lastObject longLongValue];
-  
   NSData *data = (NSData*)responseObject;
   NSDictionary<NSString*, id> *headers =
   [(NSHTTPURLResponse*)response allHeaderFields];
@@ -390,9 +414,6 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
           toLocal:(NSString *) path
        onComplete:(CallbackBlock) OnComplete
           onError:(ErrorBlock) onError {
-  if (!self.urlSession) {
-    [self configUrlSession];
-  }
   
   NSURLSession *manager = self.urlSession;
   NSURL *URL = [NSURL URLWithString:urlStr];
@@ -418,57 +439,165 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
   [task resume];
 }
 
-- (void) request: (NSURLRequest *) urlReq
-          onComplete: (CallbackBlock) onComplete
-             onError: (ErrorBlock) onError {
-  if (!self.urlSession) {
-    [self configUrlSession];
+
+- (NSURLSession *)urlSession {
+  if (!_urlSession) {
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    config.networkServiceType = NSURLNetworkServiceTypeVideo;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config
+                                                          delegate:self
+                                                     delegateQueue:nil];
+    _urlSession = session;
   }
-  
-  NSURLSessionDataTask *task = [self.urlSession dataTaskWithRequest:urlReq
-                                                  completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-                                                         if (error) {
-                                                           NSLog(@"NSURLRequest failed, response(%@), responseObject(%@)", response, data);
-                                                           onError(error);
-                                                           return;
-                                                         }
-                                                    
-                                                         NSNull *nul = [NSNull null];
-                                                         onComplete(@{
-                                                                      @"response": response ?: nul,
-                                                                      @"responseObject": data ?: nul });
-                                                  }];
-
-//  NSURLSessionTask *task =
-//  [self.urlSession
-//   dataTaskWithRequest:urlReq
-//   completionHandler:
-//   ^(NSURLResponse * _Nonnull response,
-//     id  _Nullable responseObject,
-//     NSError * _Nullable error) {
-//     if (error) {
-//       NSLog(@"NSURLRequest failed, response(%@), responseObject(%@)", response, responseObject);
-//       onError(error);
-//       return;
-//     }
-//
-//     NSNull *nul = [NSNull null];
-//     onComplete(@{
-//                  @"response": response ?: nul,
-//                  @"responseObject": responseObject ?: nul });
-//   }];
-  [task resume];
-}
-
-- (void) configUrlSession {
-  NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
-  config.networkServiceType = NSURLNetworkServiceTypeVideo;
-  NSURLSession *session = [NSURLSession sessionWithConfiguration:config];
-  self.urlSession = session;
+  return _urlSession;
 }
 
 - (void) dealloc {
   self.urlSession = nil;
 }
 
+- (void) enqueueResponseData:(NSData *) data recKey:(NSString *)recKey {
+  NSMutableDictionary *rec = self.proxyReqRecords[recKey];
+  if (!rec) {
+    return;
+  }
+  ZKSimpleFIFO *datas = rec[@"datas"];
+  if (!datas) {
+    datas = [[ZKSimpleFIFO alloc] init];
+    rec[@"datas"] = datas;
+  }
+  NSMutableData *d = [datas peek];
+  if (!d) {
+    d = [NSMutableData dataWithBytes:data.bytes length:data.length];
+    [datas enqueue:d];
+  } else {
+    [d appendBytes:data.bytes length:data.length];
+  }
+}
+
+- (void) flushQueuedDataForKey:(NSString *) recKey
+                  dataCallback:(GCDWebServerBodyReaderCompletionBlock) dataCallback {
+  NSMutableDictionary *rec = self.proxyReqRecords[recKey];
+  if (!rec) {
+    return;
+  }
+  BOOL finished = [rec[@"finished"] boolValue];
+  NSError *error = rec[@"error"];
+  
+  GCDWebServerBodyReaderCompletionBlock savedDataCallback = rec[@"dataCallback"];
+  if (dataCallback && savedDataCallback) {
+    NSAssert(NO, @"");
+    NSLog(@"Should not happen because dataCallback is serial, means sth bad happened! Will ignore the savedOne");
+    [rec removeObjectForKey:@"dataCallback"];
+  } else if (!dataCallback && !savedDataCallback) {
+    return;
+  } else if (!dataCallback) {
+    dataCallback = savedDataCallback;
+    [rec removeObjectForKey:@"dataCallback"];
+  }
+  
+  ZKSimpleFIFO *q = rec[@"datas"];
+  NSData *d = q ? [q peek] : nil;
+
+  if (d && !error) { // assume d will not be empty
+    NSLog(@"dataCallback: data length(%u)", d.length);
+    dataCallback(d, nil);
+    if (rec[@"dataCallback"]) {
+      [rec removeObjectForKey:@"dataCallback"];
+    }
+    [q dequeue];
+  } else if (error) {
+    dataCallback(nil, error);
+    [self clearProxyRecord:recKey];
+    NSLog(@"dataCallback: error(%@), will clear rec", error);
+  } else if (finished) {
+    dataCallback([NSData data], nil);
+    [self clearProxyRecord:recKey];
+    NSLog(@"dataCallback: finish, will clear rec");
+  } else {
+    NSLog(@"dataCallback: no data yet, will wait");
+    NSAssert(!rec[@"dataCallback"], @"");
+    rec[@"dataCallback"] = dataCallback;
+  }
+}
+
+- (void)finishProxyRecord:(NSString *) key error: (NSError *) error {
+  NSMutableDictionary *rec = self.proxyReqRecords[key];
+  rec[@"finished"] = @(YES);
+  if (error) {
+    rec[@"error"] = error;
+  }
+}
+
+// implements: NSURLSessionDataTask
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
+didReceiveResponse:(NSURLResponse *)response
+ completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+  dispatch_async(self.queue, ^{
+    NSAssert([response isKindOfClass:NSHTTPURLResponse.class], @"");
+    NSHTTPURLResponse *remoteResp = (NSHTTPURLResponse *)response;
+    NSDictionary *headers = [remoteResp allHeaderFields];
+    NSString *contentType = headers[@"Content-Type"];
+    NSString *fatalErrorMsg = [NSString stringWithFormat:@"no Content-Type in header: %@", headers];
+    NSAssert(contentType, fatalErrorMsg);
+    NSString *recKey = [self getProxyRecordForTask:dataTask];
+    NSMutableDictionary *rec = self.proxyReqRecords[recKey];
+    if (!rec) {
+      // other kind of request, not in a proxy record
+      completionHandler(NSURLSessionResponseAllow);
+      return;
+    }
+    
+    GCDWebServerCompletionBlock onComplete = rec[@"responseCallback"];
+    ZKGCDWebServerStreamedResponse *resp;
+    resp = [ZKGCDWebServerStreamedResponse
+            responseWithContentType:contentType
+            asyncStreamBlock:^(GCDWebServerBodyReaderCompletionBlock completionBlock) {
+              dispatch_async(self.queue, ^{
+                [self flushQueuedDataForKey:recKey dataCallback:completionBlock];
+              });
+            }];
+    resp.onClose = ^{
+      // todo
+      [dataTask cancel];
+      [self clearProxyRecord:recKey];
+    };
+    
+    [headers enumerateKeysAndObjectsUsingBlock:
+     ^(NSString * _Nonnull key,
+       id  _Nonnull obj,
+       BOOL * _Nonnull stop) {
+       if (![[key lowercaseString] isEqualToString:@"host"]) {
+         [resp setValue:obj forAdditionalHeader:key];
+       }
+     }];
+    resp.contentType = contentType;
+    resp.contentLength = [headers[@"Content-Length"] longLongValue];
+    resp.statusCode = [remoteResp statusCode];
+    
+    NSLog(@"did receive response(%@), headers(%@)", response, headers);
+    
+    onComplete(resp);
+    completionHandler(NSURLSessionResponseAllow);
+  });
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
+  dispatch_async(self.queue, ^{
+    NSLog(@"task(%@) receeive data(length: %u)", dataTask, data.length);
+    NSString *key = [self getProxyRecordForTask:dataTask];
+    [self enqueueResponseData:data recKey:key];
+    [self flushQueuedDataForKey:key dataCallback:nil];
+  });
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+  dispatch_async(self.queue, ^{
+    NSLog(@"task(%@) complete error(%@)", task, error);
+    NSString *key = [self getProxyRecordForTask:task];
+    [self finishProxyRecord:key error:error];
+    [self flushQueuedDataForKey:key dataCallback:nil];
+  });
+}
 @end

@@ -11,6 +11,7 @@
 		8A41F2A41FC80B1600B5B968 /* ZKVideoCacheManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 8A41F29F1FC80AE800B5B968 /* ZKVideoCacheManager.m */; };
 		8A41F2A51FC80B1A00B5B968 /* RequestUtils.m in Sources */ = {isa = PBXBuildFile; fileRef = 8A41F2A31FC80AE800B5B968 /* RequestUtils.m */; };
 		8AFAEBE01E45BF1300955F4B /* TableViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = 8AFAEBDE1E45BF1300955F4B /* TableViewCell.m */; };
+		F72096091FD45A3C00B0F5F6 /* ZKSimpleFIFO.m in Sources */ = {isa = PBXBuildFile; fileRef = F72096081FD45A3C00B0F5F6 /* ZKSimpleFIFO.m */; };
 		F77E88911E142C0F00FF4C27 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = F77E88901E142C0F00FF4C27 /* main.m */; };
 		F77E88941E142C0F00FF4C27 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = F77E88931E142C0F00FF4C27 /* AppDelegate.m */; };
 		F77E88971E142C0F00FF4C27 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = F77E88961E142C0F00FF4C27 /* ViewController.m */; };
@@ -18,6 +19,7 @@
 		F77E889C1E142C0F00FF4C27 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F77E889B1E142C0F00FF4C27 /* Assets.xcassets */; };
 		F77E889F1E142C0F00FF4C27 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F77E889D1E142C0F00FF4C27 /* LaunchScreen.storyboard */; };
 		F7AD435D1E268E040061A156 /* TableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = F7AD435C1E268E040061A156 /* TableViewController.m */; };
+		F7FC01931FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.m in Sources */ = {isa = PBXBuildFile; fileRef = F7FC01921FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +33,8 @@
 		8AFAEBDD1E45BF1300955F4B /* TableViewCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TableViewCell.h; sourceTree = "<group>"; };
 		8AFAEBDE1E45BF1300955F4B /* TableViewCell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TableViewCell.m; sourceTree = "<group>"; };
 		DA38285734A118173239909C /* libPods-ServerInApp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ServerInApp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F72096071FD45A3C00B0F5F6 /* ZKSimpleFIFO.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ZKSimpleFIFO.h; sourceTree = "<group>"; };
+		F72096081FD45A3C00B0F5F6 /* ZKSimpleFIFO.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ZKSimpleFIFO.m; sourceTree = "<group>"; };
 		F77E888C1E142C0F00FF4C27 /* ServerInApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ServerInApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F77E88901E142C0F00FF4C27 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		F77E88921E142C0F00FF4C27 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
@@ -43,6 +47,8 @@
 		F77E88A01E142C0F00FF4C27 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F7AD435B1E268E040061A156 /* TableViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TableViewController.h; sourceTree = "<group>"; };
 		F7AD435C1E268E040061A156 /* TableViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TableViewController.m; sourceTree = "<group>"; };
+		F7FC01911FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ZKGCDWebServerStreamedResponse.h; sourceTree = "<group>"; };
+		F7FC01921FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ZKGCDWebServerStreamedResponse.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +78,10 @@
 				8A41F29F1FC80AE800B5B968 /* ZKVideoCacheManager.m */,
 				8A41F2A01FC80AE800B5B968 /* ZKVideoCacheManager.h */,
 				8A41F2A11FC80AE800B5B968 /* Vendor */,
+				F7FC01911FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.h */,
+				F7FC01921FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.m */,
+				F72096071FD45A3C00B0F5F6 /* ZKSimpleFIFO.h */,
+				F72096081FD45A3C00B0F5F6 /* ZKSimpleFIFO.m */,
 			);
 			path = VideoCache;
 			sourceTree = "<group>";
@@ -272,10 +282,12 @@
 			files = (
 				F77E88971E142C0F00FF4C27 /* ViewController.m in Sources */,
 				8A41F2A41FC80B1600B5B968 /* ZKVideoCacheManager.m in Sources */,
+				F72096091FD45A3C00B0F5F6 /* ZKSimpleFIFO.m in Sources */,
 				8A41F2A51FC80B1A00B5B968 /* RequestUtils.m in Sources */,
 				F7AD435D1E268E040061A156 /* TableViewController.m in Sources */,
 				8AFAEBE01E45BF1300955F4B /* TableViewCell.m in Sources */,
 				F77E88941E142C0F00FF4C27 /* AppDelegate.m in Sources */,
+				F7FC01931FD455CB004ACBD7 /* ZKGCDWebServerStreamedResponse.m in Sources */,
 				F77E88911E142C0F00FF4C27 /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
