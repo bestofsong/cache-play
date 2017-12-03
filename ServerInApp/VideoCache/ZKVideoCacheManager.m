@@ -7,7 +7,6 @@
 //
 
 #import "ZKVideoCacheManager.h"
-#import "AFNetworking.h"
 #import "RequestUtils.h"
 #import "GCDWebServer.h"
 #import "GCDWebServerFileResponse.h"
@@ -18,10 +17,8 @@
 
 @property (strong, nonatomic) NSString *cacheRoot;
 @property (strong, nonatomic) GCDWebServer *webServer;
-@property (strong, nonatomic) AFHTTPSessionManager *requestManager;
 @property (strong, nonatomic) NSURLSession *urlSession;
 @property (copy, nonatomic) NSString *reverseHost;
-@property (copy, nonatomic) NSSet *acceptableTypes;
 @end
 
 @implementation ZKVideoCacheManager
@@ -98,17 +95,9 @@
    ^(__kindof GCDWebServerRequest *request, GCDWebServerCompletionBlock completionBlock) {
      NSURL *mediaUrl = [NSURL URLWithString:[self remoteHostUrl]];
      NSURL *fullUrl = [mediaUrl URLByAppendingPathComponent:request.path];
-//     AFHTTPRequestSerializer *serializer = [AFHTTPRequestSerializer serializer];
-//     [serializer setValue:@"media6.smartstudy.com" forHTTPHeaderField:@"Host"];
 //     serializer.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
-//
      NSDictionary<NSString *, id> *headers = [request headers];
-     NSString *rangeHeaderVale = headers[@"Range"];
-//     NSArray<NSNumber*> *origRange = [ZKVideoCacheManager parseRange:rangeHeaderVale];
-//     NSArray<NSNumber*> *fixedRange = [ZKVideoCacheManager restrictedRange:origRange];
-//     NSString *fixedRangeHeaderValue = [ZKVideoCacheManager assembleRangeStr:fixedRange];
      NSMutableURLRequest *mutableReq = [NSMutableURLRequest requestWithURL:fullUrl];
-//     [mutableReq setValue:fixedRangeHeaderValue forHTTPHeaderField:@"Range"];
      
      [headers enumerateKeysAndObjectsUsingBlock:
       ^(NSString * _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
@@ -116,40 +105,33 @@
          [mutableReq setValue:obj forHTTPHeaderField:key];
        }
      }];
-     [mutableReq setNetworkServiceType:NSURLNetworkServiceTypeVideo];
-//
-//     [serializer setValue:fixedRangeHeaderValue
-//       forHTTPHeaderField:@"Range"];
-     
-     NSError *error = nil;
-//     NSURLRequest *req = [serializer requestWithMethod:@"GET"
-//                                             URLString:[fullUrl absoluteString]
-//                                            parameters:nil
-//                                                 error:&error];
-     
-     
-     
+     NSMutableDictionary *requestHeaders = [NSMutableDictionary dictionary];
      [[mutableReq allHTTPHeaderFields] enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key, NSString * _Nonnull obj, BOOL * _Nonnull stop) {
-       NSLog(@"Header(%@), value(%@)", key, [mutableReq valueForHTTPHeaderField:key]);
+       requestHeaders[key] = [mutableReq valueForHTTPHeaderField:key];
      }];
+
      
-     if (mutableReq) {
-       [weakIns request:mutableReq
-             onComplete:^(NSDictionary *res) {
-               NSURLResponse *response = res[@"response"];
-               id responseObject = res[@"responseObject"];
-               [ZKVideoCacheManager handleOrigRequest:request
-                                       remoteResponse:response
-                                   remoteResponseData:responseObject
-                                             callback:completionBlock];
-             }
-                onError:^(NSError * err) {
-                  NSLog(@"request(%@) failed(%@)", mutableReq, err.localizedDescription);
-                  completionBlock(nil);
-                }];
-     } else {
-       completionBlock(nil);
-     }
+     [weakIns request:mutableReq
+           onComplete:^(NSDictionary *res) {
+             NSURLResponse *response = res[@"response"];
+             id responseObject = res[@"responseObject"];
+             
+             [ZKVideoCacheManager handleOrigRequest:request
+                                     remoteResponse:response
+                                 remoteResponseData:responseObject
+                                           callback:^(GCDWebServerResponse *resp) {
+                                             NSLog(@"DEBUG: origRequest(%@), proxyRequest(%@), remoteResp(%@), resp(%@)",
+                                                   request,
+                                                   mutableReq,
+                                                   response,
+                                                   resp);
+                                             completionBlock(resp);
+                                           }];
+           }
+              onError:^(NSError * err) {
+                NSLog(@"request(%@) failed(%@)", mutableReq, err.localizedDescription);
+                completionBlock(nil);
+              }];
    }];
   
   [theInstance.webServer startWithOptions:@{
@@ -401,43 +383,39 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
 //    resp.statusCode = 206;
 //  }
 //  resp.contentLength = to + 1 - from;
-  
-  NSLog(@"DEBUG: origRequest(%@), remoteResp(%@), resp(%@)", request, response, resp);
-  
   callback(resp);
-}
-
-+ (void) setAcceptableMimeContentTypes:(NSSet *)types {
-  [ZKVideoCacheManager shareInstance].acceptableTypes = types;
 }
 
 - (void) download:(NSString *)urlStr
           toLocal:(NSString *) path
        onComplete:(CallbackBlock) OnComplete
           onError:(ErrorBlock) onError {
-  if (!self.requestManager) {
-    [self configRequestManager];
+  if (!self.urlSession) {
+    [self configUrlSession];
   }
   
-  AFURLSessionManager *manager = self.requestManager;
+  NSURLSession *manager = self.urlSession;
   NSURL *URL = [NSURL URLWithString:urlStr];
   NSURLRequest *request = [NSURLRequest requestWithURL:URL];
   
-  NSURLSessionDownloadTask *downloadTask =
-  [manager
-   downloadTaskWithRequest:request
-   progress:nil
-   destination:^NSURL *(NSURL *targetPath, NSURLResponse *response) { return [NSURL fileURLWithPath:path]; }
-   completionHandler:^(NSURLResponse *response, NSURL *filePath, NSError *error) {
-     if (error) {
-       onError(error);
-     } else {
-       NSNull *nul = [NSNull null];
-       OnComplete(@{ @"response": response ?: nul, @"filePath": filePath ?: nul });
-     }
-   }];
-  
-  [downloadTask resume];
+  NSURLSessionDownloadTask *task = nil;
+  task = [manager
+          downloadTaskWithRequest:request
+          completionHandler:
+          ^(NSURL * _Nullable location,
+            NSURLResponse * _Nullable response,
+            NSError * _Nullable error) {
+            
+            NSURL *pathUrl = [NSURL fileURLWithPath:path];
+            BOOL moveFileRc = [[NSFileManager defaultManager] moveItemAtURL:location toURL:pathUrl error:&error];
+            if (error || !moveFileRc) {
+              onError(error);
+            } else {
+              NSNull *nul = [NSNull null];
+              OnComplete(@{ @"response": response ?: nul });
+            }
+          }];
+  [task resume];
 }
 
 - (void) request: (NSURLRequest *) urlReq
@@ -482,24 +460,6 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
   [task resume];
 }
 
-- (NSSet *) acceptableTypes {
-  if (!_acceptableTypes) {
-    _acceptableTypes = [NSSet setWithObjects:
-     @"application/octet-stream",
-     @"video/mp4",
-     nil];
-  }
-  return _acceptableTypes;
-}
-
-- (void) configRequestManager {
-//  NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
-//  AFURLSessionManager *manager = [[AFURLSessionManager alloc] initWithSessionConfiguration:configuration];
-  self.requestManager = [AFHTTPSessionManager manager];
-  self.requestManager.responseSerializer = [AFHTTPResponseSerializer serializer];
-  self.requestManager.responseSerializer.acceptableContentTypes = [self acceptableTypes];
-}
-
 - (void) configUrlSession {
   NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
   config.networkServiceType = NSURLNetworkServiceTypeVideo;
@@ -508,7 +468,7 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
 }
 
 - (void) dealloc {
-  self.requestManager = nil;
+  self.urlSession = nil;
 }
 
 @end
