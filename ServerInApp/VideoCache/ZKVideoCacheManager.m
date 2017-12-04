@@ -13,6 +13,12 @@
 #import "GCDWebServerDataResponse.h"
 #import "ZKGCDWebServerStreamedResponse.h"
 #import "ZKSimpleFIFO.h"
+//
+//@interface ZKRangeRequestAdapterServer: NSObject
+//@end
+//
+//@implementation ZKRangeRequestAdapterServer
+//@end
 
 
 @interface ZKVideoCacheManager () <NSURLSessionDataDelegate>
@@ -24,8 +30,8 @@
 @property (strong, nonatomic) NSURLCache *cache;
 @end
 
-@implementation ZKVideoCacheManager
 
+@implementation ZKVideoCacheManager
 + (instancetype)shareInstance {
   static dispatch_once_t onceToken;
   static ZKVideoCacheManager *ret = nil;
