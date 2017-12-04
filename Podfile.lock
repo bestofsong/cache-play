@@ -3,18 +3,21 @@ PODS:
     - GCDWebServer/Core (= 3.3.3)
   - GCDWebServer/Core (3.3.3)
   - Masonry (1.1.0)
+  - ss-oc-core (0.1.0)
   - ZKUIKit (0.1.10):
     - Masonry
 
 DEPENDENCIES:
   - GCDWebServer (~> 3.0)
+  - ss-oc-core
   - ZKUIKit
 
 SPEC CHECKSUMS:
   GCDWebServer: 1c39a1f0763e4eb492bee021e4270fce097d3555
   Masonry: 678fab65091a9290e40e2832a55e7ab731aad201
+  ss-oc-core: d658646ab2499efc36a84ff0196b29bae048ef97
   ZKUIKit: f6fbbb23e0f62821845bdfa901cbbbe9fafb770c
 
-PODFILE CHECKSUM: 456a319b0f558289cee0f1f97b4c9b20db37ca72
+PODFILE CHECKSUM: 2031b9dd9718df4cd8a8f82c0cf80abf4f4ba543
 
 COCOAPODS: 1.3.1
