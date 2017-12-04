@@ -45,10 +45,6 @@
 }
 
 - (IBAction)removeCachedVideos:(id)sender {
-  NSError *error = nil;
-  if (![ZKVideoCacheManager clearM3u8Cache:&error]) {
-    NSLog(@"failed to clear m3u8 cache, error: %@", error);
-  }
 }
 
 - (UIStatusBarStyle)preferredStatusBarStyle {
