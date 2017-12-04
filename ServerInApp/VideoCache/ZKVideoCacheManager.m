@@ -16,8 +16,6 @@
 
 
 @interface ZKVideoCacheManager () <NSURLSessionDataDelegate>
-
-@property (strong, nonatomic) NSString *cacheRoot;
 @property (strong, nonatomic) GCDWebServer *webServer;
 @property (strong, nonatomic) NSURLSession *urlSession;
 @property (copy, nonatomic) NSString *reverseHost;
@@ -63,7 +61,6 @@
                    listener:(CallbackBlock) listener {
   ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
   theInstance.reverseHost = host;
-  theInstance.webServer = [[GCDWebServer alloc] init];
   
   if (cache) {
     theInstance.cache = cache;
@@ -77,59 +74,8 @@
    addDefaultHandlerForMethod:@"GET"
    requestClass:GCDWebServerRequest.class
    asyncProcessBlock:^(GCDWebServerRequest *request, GCDWebServerCompletionBlock completion) {
-     NSURL *mediaUrl = [NSURL URLWithString:[self remoteHostUrl]];
-     NSURL *fullUrl = [mediaUrl URLByAppendingPathComponent:request.path];
-     NSString *localPath = [ZKVideoCacheManager _cachePathForUrl:[fullUrl absoluteString]];
-     if (listener) {
-       listener(@{ @"request": @{ @"path": request.path ?: @"" } });
-     }
-     if ([[NSFileManager defaultManager] fileExistsAtPath:localPath]) {
-       if (listener) {
-         listener(@{ @"response": @{ @"status": @"reuse", @"name": [localPath lastPathComponent] ?: @"" } });
-       }
-       completion([GCDWebServerFileResponse responseWithFile:localPath]);
-     } else {
-       [ZKVideoCacheManager _mkdirForM3u8PlaylistUrl:[fullUrl absoluteString]];
-       [weakIns download:fullUrl.absoluteString
-                 toLocal:localPath
-              onComplete:^(NSDictionary *res) {
-                if (listener) {
-                  listener(@{ @"response": @{ @"status": @"normal", @"name": [localPath lastPathComponent] ?: @"" } });
-                }
-                completion([GCDWebServerFileResponse responseWithFile:localPath]);
-              }
-                 onError:^(NSError *err) {
-                   NSLog(@"error download file: %@, err: %@", fullUrl, err);
-                   if (listener) {
-                     listener(@{ @"response": @{ @"status": @"fail", @"error": err ?: @"", @"name": [localPath lastPathComponent] ?: @"" } });
-                   }
-                   completion(nil);
-                 }];
-     }
-   }];
-  
-  
-  [theInstance.webServer
-   addHandlerWithMatchBlock:
-   ^GCDWebServerRequest *(NSString *requestMethod,
-                          NSURL *requestURL,
-                          NSDictionary *requestHeaders,
-                          NSString *urlPath,
-                          NSDictionary *urlQuery) {
-     NSString *suffix = [[urlPath componentsSeparatedByString:@"."] lastObject];
-     if ([suffix isEqualToString:@"mp4"]) {
-       return [[GCDWebServerRequest alloc] initWithMethod:requestMethod
-                                                      url:requestURL
-                                                  headers:requestHeaders
-                                                     path:urlPath
-                                                    query:urlQuery];
-     }
-     return nil;
-   }
-   asyncProcessBlock:
-   ^(__kindof GCDWebServerRequest *request, GCDWebServerCompletionBlock completionBlock) {
      [weakIns handleClientRequest:request
-                       onResponse:completionBlock];
+                       onResponse:completion];
    }];
   
   dispatch_async(dispatch_get_main_queue(), ^{
@@ -146,6 +92,8 @@
             diskCapacity:(NSUInteger)diskCap
                 listener:(CallbackBlock) listener {
   ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
+  theInstance.webServer = [[GCDWebServer alloc] init];
+  
   dispatch_async(theInstance.queue, ^{
     [self startReverseHostImp:host
                         cache:cache
@@ -204,14 +152,6 @@
   }
 }
 
-- (void)getDataUrl:(NSString*)url
-          fromByte:(int64_t)fromByte
-            toByte:(int64_t)toByte
-      onComplete:(void(^)(NSData *))onComplete
-           onFail:(void(^)(NSError *))onFail {
-  
-}
-
 + (NSString*)serverUrl {
   NSMutableString *ret = [[[self shareInstance] webServer].serverURL.absoluteString mutableCopy];
   NSRange rg;
@@ -228,249 +168,13 @@
   return [ZKVideoCacheManager shareInstance].reverseHost;
 }
 
-+ (NSString*)_decodeM3u8Url:(NSString*)m3u8Url {
-  // todo:
-  return m3u8Url;
-}
-
-+ (NSString*)cacheUrlForM3u8:(NSString*)m3u8Url {
-  m3u8Url = [self _decodeM3u8Url:m3u8Url];
++ (NSString*)getProxyUrl:(NSString*)origUrl {
   NSURL *serverNormalizedUrl = [NSURL URLWithString:[self serverUrl]];
-  NSURL *originalUrl = [NSURL URLWithString:m3u8Url];
+  NSURL *originalUrl = [NSURL URLWithString:origUrl];
   NSString *path = [originalUrl path];
   NSURL *ret = [serverNormalizedUrl URLByAppendingPathComponent:path];
   return ret.absoluteString;
 }
-
-
-+ (void)_mkdirForM3u8PlaylistUrl:(NSString*)m3u8Url {
-  NSString *path = [self _cachePathForUrl:m3u8Url];
-  NSString *dir = [path stringByDeletingLastPathComponent];
-  NSFileManager *fm = [NSFileManager defaultManager];
-  NSError *error = nil;
-  if (![fm createDirectoryAtPath:dir
-     withIntermediateDirectories:YES
-                      attributes:nil
-                           error:&error]) {
-    NSLog(@"failed to createDirectory:%@ for playlist url: %@, error: %@", dir, m3u8Url, error);
-  }
-}
-
-- (NSString*)cacheRoot {
-  NSArray<NSString *> *dirs = NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES);
-  NSString *libDir = dirs[0];
-  if (!_cacheRoot) {
-    _cacheRoot = [libDir stringByAppendingPathComponent:@"M3U8Cache"];
-    NSFileManager *fm = [NSFileManager defaultManager];
-    if (![fm fileExistsAtPath:_cacheRoot]) {
-      NSError *error = nil;
-      if (![fm createDirectoryAtPath:_cacheRoot
-         withIntermediateDirectories:YES
-                          attributes:nil
-                               error:&error]) {
-        NSLog(@"failed to crteate directory: %@, error: %@", _cacheRoot, error);
-        _cacheRoot = nil;
-      }
-    }
-  }
-  return _cacheRoot;
-}
-
-+ (NSString*)cacheRoot {
-  return [[self shareInstance] cacheRoot];
-}
-
-+ (NSString*)_cachePathForUrl:(NSString*)url {
-  NSString *root = [[self shareInstance] cacheRoot];
-  NSString *relativePart = [self encodeRemoteUrlToLocalPath:url];
-  return [root stringByAppendingPathComponent:relativePart];
-}
-
-+ (NSString*)encodeRemoteUrlToLocalPath:(NSString*)urlStr {
-  NSMutableString *ret = [NSMutableString stringWithString:@""];
-  NSURL *url = urlStr ? [NSURL URLWithString:urlStr] : nil;
-  if (url.scheme) {
-    NSString *lastChar = ret.length ? [ret substringFromIndex:ret.length - 1] : nil;
-    if ([lastChar isEqualToString:@"/"]) {
-      [ret appendFormat:@"%@", url.scheme];
-    } else {
-      [ret appendFormat:@"/%@", url.scheme];
-    }
-  }
-  
-  if (url.host) {
-    [ret appendFormat:@"/%@", url.host];
-  }
-  if (url.port) {
-    [ret appendFormat:@"/%@", url.port];
-  }
-  
-  if (url.user || url.password) {
-    [ret appendFormat:@"/%@-%@", url.user, url.password];
-  }
-  
-  if (url.parameterString) {
-    [ret appendFormat:@"/%@", url.parameterString];
-  }
-  
-  if (url.query) {
-    NSDictionary<NSString*, NSString*> *queryParams = [url.query URLQueryParameters];
-    [queryParams
-     enumerateKeysAndObjectsUsingBlock:
-     ^(NSString * _Nonnull key, NSString * _Nonnull obj, BOOL * _Nonnull stop) {
-       
-       [ret appendFormat:@"/%@-%@", key, obj];
-     }];
-  }
-  
-  if (url.fragment) {
-    [ret appendFormat:@"/%@", url.fragment];
-  }
-  
-  NSString *lastChar = ret.length ? [ret substringFromIndex:ret.length - 1] : nil;
-  if ([lastChar isEqualToString:@"/"]) {
-    NSRange rg;
-    rg.location = ret.length - 1;
-    rg.length = 1;
-    [ret deleteCharactersInRange:rg];
-  }
-  if (url.path) {
-    [ret appendFormat:@"%@", url.path];
-  }
-  
-  return ret;
-}
-
-+ (BOOL)clearM3u8Cache:(NSError *__autoreleasing *)perror {
-  NSError *error = perror ? *perror : nil;
-  NSString *cacheRoot = [[self shareInstance] cacheRoot];
-  NSFileManager *fm = [NSFileManager defaultManager];
-  BOOL ret = [fm removeItemAtPath:cacheRoot error:&error];
-  if (!ret) {
-    NSLog(@"failed to removeItemAtPath: %@, error: %@", cacheRoot, error);
-  }
-  return ret;
-}
-
-+ (unsigned long long)cacheSize {
-  return [self sizeOfDirectory:[self cacheRoot]];
-}
-
-+ (unsigned long long)sizeOfDirectory:(NSString*)root {
-  if (!root) {
-    return 0;
-  }
-  NSURL *rootUrl = [NSURL fileURLWithPath:root];
-  unsigned long long ret = 0;
-  NSFileManager *fm = [NSFileManager defaultManager];
-  NSDirectoryEnumerator *directoryEnumerator =
-  [fm enumeratorAtURL:rootUrl
-includingPropertiesForKeys:@[NSURLIsRegularFileKey,
-                             NSURLFileSizeKey]
-              options: NSDirectoryEnumerationSkipsHiddenFiles
-         errorHandler:nil];
-  for (NSURL *file in directoryEnumerator) {
-    NSError *error = nil;
-    NSDictionary *values = nil;
-    if ((values = [file resourceValuesForKeys:@[NSURLIsRegularFileKey, NSURLFileSizeKey] error:&error])) {
-      if ([values[NSURLIsRegularFileKey] boolValue]) {
-        ret += [values[NSURLFileSizeKey] longLongValue];
-      }
-    } else {
-      NSLog(@"failed to getResourceValue for file: %@, error: %@", file, error);
-    }
-  }
-  return ret;
-}
-
-// utils
-+ (NSArray<NSNumber *> *) parseRange:(NSString *)rangeHeaderValue {
-  // todo: range may be of other format?: like bytes=111
-  NSString *rangeStr = [rangeHeaderValue componentsSeparatedByString:@"="].lastObject;
-  NSArray *fromTo = [rangeStr componentsSeparatedByString:@"-"];
-  int64_t from = [fromTo.firstObject longLongValue];
-  int64_t to = [fromTo.lastObject longLongValue];
-  return @[@(from), @(to)];
-}
-
-+ (NSString *) assembleRangeStr: (NSArray<NSNumber *> *) range {
-  int64_t from = [range.firstObject longLongValue];
-  int64_t to = [range.lastObject longLongValue];
-  return [NSString stringWithFormat:@"bytes=%lld-%lld", from, to];
-}
-
-+ (NSArray<NSNumber *> *) restrictedRange: (NSArray<NSNumber *> *) rg {
-  return rg;
-  int64_t from = [rg.firstObject longLongValue];
-  int64_t to = [rg.lastObject longLongValue];
-  int64_t refrainedTo = MIN(from + 512 * 1024 - 1, to);
-  return @[@(from), @(refrainedTo)];
-}
-
-+ (void) handleOrigRequest:(GCDWebServerRequest *)request
-            remoteResponse:(NSURLResponse *)response
-        remoteResponseData:(id)responseObject
-                  callback:(GCDWebServerCompletionBlock) callback {
-  NSData *data = (NSData*)responseObject;
-  NSDictionary<NSString*, id> *headers =
-  [(NSHTTPURLResponse*)response allHeaderFields];
-  GCDWebServerDataResponse *resp = [GCDWebServerDataResponse
-                                    responseWithData:data
-                                    contentType:headers[@"Content-Type"]];
-  resp.statusCode = [(NSHTTPURLResponse*)response statusCode];
-  
-  [headers enumerateKeysAndObjectsUsingBlock:
-   ^(NSString * _Nonnull key,
-     id  _Nonnull obj,
-     BOOL * _Nonnull stop) {
-     [resp setValue:obj forAdditionalHeader:key];
-   }];
-  
-//  [resp setValue:[NSString stringWithFormat:@"%lld", refrainedTo + 1 - from]
-//forAdditionalHeader:@"Content-Length"];
-//
-//  NSString *totalLenStr = [headers[@"Content-Range"] componentsSeparatedByString:@"/"].lastObject;
-//  int64_t totalLen = [totalLenStr longLongValue];
-//
-//  [resp setValue:[NSString stringWithFormat:@"bytes %lld-%lld/%lld", from, to, totalLen]
-//forAdditionalHeader:@"Content-Range"];
-//
-//  if (refrainedTo + 1 < totalLen) {
-//    resp.statusCode = 206;
-//  }
-//  resp.contentLength = to + 1 - from;
-  callback(resp);
-}
-
-- (void) download:(NSString *)urlStr
-          toLocal:(NSString *) path
-       onComplete:(CallbackBlock) OnComplete
-          onError:(ErrorBlock) onError {
-  
-  NSURLSession *manager = self.urlSession;
-  NSURL *URL = [NSURL URLWithString:urlStr];
-  NSURLRequest *request = [NSURLRequest requestWithURL:URL];
-  
-  NSURLSessionDownloadTask *task = nil;
-  task = [manager
-          downloadTaskWithRequest:request
-          completionHandler:
-          ^(NSURL * _Nullable location,
-            NSURLResponse * _Nullable response,
-            NSError * _Nullable error) {
-            
-            NSURL *pathUrl = [NSURL fileURLWithPath:path];
-            BOOL moveFileRc = [[NSFileManager defaultManager] moveItemAtURL:location toURL:pathUrl error:&error];
-            if (error || !moveFileRc) {
-              onError(error);
-            } else {
-              NSNull *nul = [NSNull null];
-              OnComplete(@{ @"response": response ?: nul });
-            }
-          }];
-  [task resume];
-}
-
 
 - (NSURLSession *)urlSession {
   if (!_urlSession) {
@@ -603,7 +307,7 @@ didReceiveResponse:(NSURLResponse *)response
        }
      }];
     resp.contentType = contentType;
-    resp.contentLength = [headers[@"Content-Length"] unsignedIntegerValue];
+    resp.contentLength = (NSUInteger)[headers[@"Content-Length"] integerValue];
     resp.statusCode = [remoteResp statusCode];
     
     onComplete(resp);

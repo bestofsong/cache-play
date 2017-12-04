@@ -20,7 +20,7 @@ typedef void(^ErrorBlock)(NSError *);
              memCapacity:(NSUInteger)memCap
             diskCapacity:(NSUInteger)diskCap
                 listener:(CallbackBlock) listener;
-+ (BOOL)clearM3u8Cache:(NSError **)error;
-+ (unsigned long long)cacheSize;
+
++ (NSString*)getProxyUrl:(NSString*)origUrl;
 
 @end

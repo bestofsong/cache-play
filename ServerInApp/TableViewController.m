@@ -10,7 +10,6 @@
 #import <AVKit/AVKit.h>
 #import "ZKVideoCacheManager.h"
 #import "TableViewCell.h"
-#import "ZKVideoCacheManager+Private.h"
 #import "ZKVideoViewController.h"
 
 @interface TableViewController ()
@@ -31,13 +30,13 @@
                                                                            action:@selector(previewVideo:)];
   
   NSArray<NSString*> *urls = @[
-                               @"http://media6.smartstudy.com/29/47/97142/2/dest.mp4",
                                @"http://media6.smartstudy.com/29/47/97142/2/dest.m3u8",
+                               @"http://media6.smartstudy.com/29/47/97142/2/dest.mp4",
                                ];
   NSMutableArray<NSMutableDictionary*> *dataSource = [NSMutableArray array];
   [urls enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
     [dataSource addObject:[@{
-                            @"url": [ZKVideoCacheManager cacheUrlForM3u8:obj],
+                            @"url": [ZKVideoCacheManager getProxyUrl:obj],
 //                            @"url": obj,
                             @"on": @NO,
                             } mutableCopy]];
