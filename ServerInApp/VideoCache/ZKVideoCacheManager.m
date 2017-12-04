@@ -500,7 +500,6 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
   NSData *d = q ? [q peek] : nil;
 
   if (d && !error) { // assume d will not be empty
-    NSLog(@"dataCallback: data length(%u)", d.length);
     dataCallback(d, nil);
     if (rec[@"dataCallback"]) {
       [rec removeObjectForKey:@"dataCallback"];
@@ -513,9 +512,7 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
   } else if (finished) {
     dataCallback([NSData data], nil);
     [self clearProxyRecord:recKey];
-    NSLog(@"dataCallback: finish, will clear rec");
   } else {
-    NSLog(@"dataCallback: no data yet, will wait");
     NSAssert(!rec[@"dataCallback"], @"");
     rec[@"dataCallback"] = dataCallback;
   }
@@ -544,7 +541,7 @@ didReceiveResponse:(NSURLResponse *)response
     NSString *recKey = [self getProxyRecordForTask:dataTask];
     NSMutableDictionary *rec = self.proxyReqRecords[recKey];
     if (!rec) {
-      // other kind of request, not in a proxy record
+      // fixme: make sure this does not happen ? other kind of request, not in a proxy record
       completionHandler(NSURLSessionResponseAllow);
       return;
     }
@@ -576,8 +573,6 @@ didReceiveResponse:(NSURLResponse *)response
     resp.contentLength = [headers[@"Content-Length"] longLongValue];
     resp.statusCode = [remoteResp statusCode];
     
-    NSLog(@"did receive response(%@), headers(%@)", response, headers);
-    
     onComplete(resp);
     completionHandler(NSURLSessionResponseAllow);
   });
@@ -585,7 +580,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
   dispatch_async(self.queue, ^{
-    NSLog(@"task(%@) receeive data(length: %u)", dataTask, data.length);
+    if (dataTask.state == NSURLSessionTaskStateCanceling) {
+      return;
+    }
     NSString *key = [self getProxyRecordForTask:dataTask];
     [self enqueueResponseData:data recKey:key];
     [self flushQueuedDataForKey:key dataCallback:nil];
@@ -594,7 +591,9 @@ didReceiveResponse:(NSURLResponse *)response
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
   dispatch_async(self.queue, ^{
-    NSLog(@"task(%@) complete error(%@)", task, error);
+    if (task.state == NSURLSessionTaskStateCanceling) {
+      return;
+    }
     NSString *key = [self getProxyRecordForTask:task];
     [self finishProxyRecord:key error:error];
     [self flushQueuedDataForKey:key dataCallback:nil];
