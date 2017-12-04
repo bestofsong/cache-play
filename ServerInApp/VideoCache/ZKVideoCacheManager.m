@@ -23,6 +23,7 @@
 @property (copy, nonatomic) NSString *reverseHost;
 @property (strong, nonatomic) NSMutableDictionary<NSString *, NSMutableDictionary *> *proxyReqRecords;
 @property (strong, nonatomic) dispatch_queue_t queue;
+@property (strong, nonatomic) NSURLCache *cache;
 @end
 
 @implementation ZKVideoCacheManager
@@ -38,22 +39,38 @@
   return ret;
 }
 
-+ (void)startReverseHost:(NSString *)host listener: (CallbackBlock) listener {
++ (NSURLCache *) getCacheMemoryCap:(NSUInteger)memCap diskCap:(NSUInteger)diskCap {
+  static dispatch_once_t onceToken;
+  static NSURLCache *cache = nil;
+  dispatch_once(&onceToken, ^{
+    NSBundle *bd = [NSBundle mainBundle];
+    NSString *bid = (NSString *)[bd objectForInfoDictionaryKey:(NSString *)kCFBundleIdentifierKey];
+    NSString *cacheFilename = [NSString stringWithFormat:@"%@.cache", bid];
+    NSString *cacheDir = NSSearchPathForDirectoriesInDomains(NSCachesDirectory, NSUserDomainMask, YES)[0];
+    NSString *cachePath = [cacheDir stringByAppendingPathComponent:cacheFilename];
+    cache = [[NSURLCache alloc] initWithMemoryCapacity:memCap ?: (10 << 20)
+                                          diskCapacity:diskCap ?: (100 << 20)
+                                              diskPath:cachePath];
+    [NSURLCache setSharedURLCache:cache];
+  });
+  return cache;
+}
+
++ (void)startReverseHostImp:(NSString *)host
+                      cache:(NSURLCache *)cache
+                memCapacity:(NSUInteger)memCap
+               diskCapacity:(NSUInteger)diskCap
+                   listener:(CallbackBlock) listener {
   ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
   theInstance.reverseHost = host;
   theInstance.webServer = [[GCDWebServer alloc] init];
-  CallbackBlock mainQueueListener = ^(NSDictionary *info) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-      listener(info);
-    });
-  };
-  dispatch_async(theInstance.queue, ^{
-    [ZKVideoCacheManager startReverseHostImp:host listener:mainQueueListener];
-  });
-}
-
-+ (void)startReverseHostImp:(NSString *)host listener: (CallbackBlock) listener {
-  ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
+  
+  if (cache) {
+    theInstance.cache = cache;
+  } else {
+    theInstance.cache = [self getCacheMemoryCap:memCap diskCap:diskCap];
+  }
+  
   ZKVideoCacheManager * __weak weakIns = theInstance;
   
   [theInstance.webServer
@@ -74,20 +91,20 @@
      } else {
        [ZKVideoCacheManager _mkdirForM3u8PlaylistUrl:[fullUrl absoluteString]];
        [weakIns download:fullUrl.absoluteString
-                     toLocal:localPath
-                  onComplete:^(NSDictionary *res) {
-                    if (listener) {
-                      listener(@{ @"response": @{ @"status": @"normal", @"name": [localPath lastPathComponent] ?: @"" } });
-                    }
-                    completion([GCDWebServerFileResponse responseWithFile:localPath]);
-                  }
-                     onError:^(NSError *err) {
-                       NSLog(@"error download file: %@, err: %@", fullUrl, err);
-                       if (listener) {
-                         listener(@{ @"response": @{ @"status": @"fail", @"error": err ?: @"", @"name": [localPath lastPathComponent] ?: @"" } });
-                       }
-                       completion(nil);
-                     }];
+                 toLocal:localPath
+              onComplete:^(NSDictionary *res) {
+                if (listener) {
+                  listener(@{ @"response": @{ @"status": @"normal", @"name": [localPath lastPathComponent] ?: @"" } });
+                }
+                completion([GCDWebServerFileResponse responseWithFile:localPath]);
+              }
+                 onError:^(NSError *err) {
+                   NSLog(@"error download file: %@, err: %@", fullUrl, err);
+                   if (listener) {
+                     listener(@{ @"response": @{ @"status": @"fail", @"error": err ?: @"", @"name": [localPath lastPathComponent] ?: @"" } });
+                   }
+                   completion(nil);
+                 }];
      }
    }];
   
@@ -99,16 +116,16 @@
                           NSDictionary *requestHeaders,
                           NSString *urlPath,
                           NSDictionary *urlQuery) {
-    NSString *suffix = [[urlPath componentsSeparatedByString:@"."] lastObject];
-    if ([suffix isEqualToString:@"mp4"]) {
-      return [[GCDWebServerRequest alloc] initWithMethod:requestMethod
-                                                     url:requestURL
-                                                 headers:requestHeaders
-                                                    path:urlPath
-                                                   query:urlQuery];
-    }
-    return nil;
-  }
+     NSString *suffix = [[urlPath componentsSeparatedByString:@"."] lastObject];
+     if ([suffix isEqualToString:@"mp4"]) {
+       return [[GCDWebServerRequest alloc] initWithMethod:requestMethod
+                                                      url:requestURL
+                                                  headers:requestHeaders
+                                                     path:urlPath
+                                                    query:urlQuery];
+     }
+     return nil;
+   }
    asyncProcessBlock:
    ^(__kindof GCDWebServerRequest *request, GCDWebServerCompletionBlock completionBlock) {
      [weakIns handleClientRequest:request
@@ -120,6 +137,21 @@
                                               GCDWebServerOption_Port:@(4567),
                                               GCDWebServerOption_BindToLocalhost:@YES,
                                               } error:NULL];
+  });
+}
+
++ (void)startReverseHost:(NSString *)host
+                   cache:(NSURLCache *)cache
+             memCapacity:(NSUInteger)memCap
+            diskCapacity:(NSUInteger)diskCap
+                listener:(CallbackBlock) listener {
+  ZKVideoCacheManager *theInstance = [ZKVideoCacheManager shareInstance];
+  dispatch_async(theInstance.queue, ^{
+    [self startReverseHostImp:host
+                        cache:cache
+                  memCapacity:memCap
+                 diskCapacity:diskCap
+                     listener:listener];
   });
 }
 
@@ -571,7 +603,7 @@ didReceiveResponse:(NSURLResponse *)response
        }
      }];
     resp.contentType = contentType;
-    resp.contentLength = [headers[@"Content-Length"] longLongValue];
+    resp.contentLength = [headers[@"Content-Length"] unsignedIntegerValue];
     resp.statusCode = [remoteResp statusCode];
     
     onComplete(resp);

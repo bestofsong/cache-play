@@ -11,6 +11,9 @@
 
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
   [ZKVideoCacheManager startReverseHost:@"http://media6.smartstudy.com"
+                                  cache:nil
+                            memCapacity:-1
+                           diskCapacity:-1
                                listener:^(NSDictionary *info) {
                                  dispatch_async(dispatch_get_main_queue(), ^{
                                    [self showServerEvent:info];
