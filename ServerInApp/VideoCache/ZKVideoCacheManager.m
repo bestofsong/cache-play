@@ -466,7 +466,14 @@ includingPropertiesForKeys:@[NSURLIsRegularFileKey,
     datas = [[ZKSimpleFIFO alloc] init];
     rec[@"datas"] = datas;
   }
-  [datas enqueue:data];
+  
+  NSMutableData *d = [datas peek];
+  if (!d) {
+    d = [NSMutableData dataWithBytes:data.bytes length:data.length];
+    [datas enqueue:d];
+  } else {
+    [d appendBytes:data.bytes length:data.length];
+  }
 }
 
 - (void) flushQueuedDataForKey:(NSString *) recKey
