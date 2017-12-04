@@ -1,19 +1,4 @@
 PODS:
-  - AFNetworking (3.1.0):
-    - AFNetworking/NSURLSession (= 3.1.0)
-    - AFNetworking/Reachability (= 3.1.0)
-    - AFNetworking/Security (= 3.1.0)
-    - AFNetworking/Serialization (= 3.1.0)
-    - AFNetworking/UIKit (= 3.1.0)
-  - AFNetworking/NSURLSession (3.1.0):
-    - AFNetworking/Reachability
-    - AFNetworking/Security
-    - AFNetworking/Serialization
-  - AFNetworking/Reachability (3.1.0)
-  - AFNetworking/Security (3.1.0)
-  - AFNetworking/Serialization (3.1.0)
-  - AFNetworking/UIKit (3.1.0):
-    - AFNetworking/NSURLSession
   - GCDWebServer (3.3.3):
     - GCDWebServer/Core (= 3.3.3)
   - GCDWebServer/Core (3.3.3)
@@ -22,16 +7,14 @@ PODS:
     - Masonry
 
 DEPENDENCIES:
-  - AFNetworking
   - GCDWebServer (~> 3.0)
   - ZKUIKit
 
 SPEC CHECKSUMS:
-  AFNetworking: 5e0e199f73d8626b11e79750991f5d173d1f8b67
   GCDWebServer: 1c39a1f0763e4eb492bee021e4270fce097d3555
   Masonry: 678fab65091a9290e40e2832a55e7ab731aad201
   ZKUIKit: f6fbbb23e0f62821845bdfa901cbbbe9fafb770c
 
-PODFILE CHECKSUM: e92858c669d335b6a8c1e74d4e4bb979768376c1
+PODFILE CHECKSUM: 456a319b0f558289cee0f1f97b4c9b20db37ca72
 
 COCOAPODS: 1.3.1
